@@ -3,17 +3,19 @@
 // ============================================================
 
 let currentDate = todayKey();
-let activeTab = 'food';       // food | calories | nutrition | meds
+let activeTab = 'food';       // food | calories | nutrition | meds | stats
 let appData = {};             // 所有日期数据缓存
+let _currentMatchedFood = null;
 
-// ——— 初始化 ———
+// ——————————————————————————
+// 初始化
+// ——————————————————————————
 document.addEventListener('DOMContentLoaded', () => {
   appData = loadData();
   ensureDay(currentDate);
   initTabs();
   renderCurrentTab();
   setupInstall();
-  // 每日食物输入弹窗关闭时保存
   document.getElementById('modalOverlay').addEventListener('click', e => {
     if(e.target === document.getElementById('modalOverlay')) closeModal();
   });
@@ -23,7 +25,9 @@ function ensureDay(dk){
   if(!appData[dk]) appData[dk] = {food:[], med:[]};
 }
 
-// ——— Tab 导航 ———
+// ——————————————————————————
+// Tab 导航
+// ——————————————————————————
 function initTabs(){
   const tabs = document.querySelectorAll('.tab-btn');
   tabs.forEach(t => t.addEventListener('click', () => {
@@ -32,7 +36,6 @@ function initTabs(){
     t.classList.add('active');
     renderCurrentTab();
   }));
-  // 设置默认选中
   document.querySelector('[data-tab="food"]').classList.add('active');
 }
 
@@ -44,26 +47,38 @@ function renderCurrentTab(){
     case 'calories':  renderCaloriesTab(page); break;
     case 'nutrition': renderNutritionTab(page); break;
     case 'meds':      renderMedsTab(page); break;
+    case 'stats':     renderStatsTab(page); break;
   }
 }
 
-// =============================================
+// ================================================================
 // 分区1：饮食记录
-// =============================================
+// ================================================================
 function renderFoodTab(p){
   const day = appData[currentDate] || {food:[], med:[]};
 
   // 日期导航
   p.appendChild(makeDateNav());
 
-  // 添加按钮
+  // 添加按钮行
+  const btnRow = document.createElement('div');
+  btnRow.style = 'display:flex;gap:8px;margin-bottom:12px;';
   const addBtn = document.createElement('button');
   addBtn.className = 'add-food-btn';
+  addBtn.style.flex = '1';
   addBtn.innerHTML = '＋ 添加食物';
   addBtn.onclick = () => openAddFoodModal();
-  p.appendChild(addBtn);
+  const juiceBtn = document.createElement('button');
+  juiceBtn.className = 'add-food-btn';
+  juiceBtn.style.flex = '1';
+  juiceBtn.style.background = '#7c3aed';
+  juiceBtn.innerHTML = '🧃 榨果汁';
+  juiceBtn.onclick = () => openJuiceModal();
+  btnRow.appendChild(addBtn);
+  btnRow.appendChild(juiceBtn);
+  p.appendChild(btnRow);
 
-  // 按餐次分组显示
+  // 按餐次分组
   const MEALS = ['早餐','午餐','晚餐','下午茶','加餐'];
   const byMeal = {};
   (day.food || []).forEach((item, idx) => {
@@ -76,7 +91,7 @@ function renderFoodTab(p){
   if(!hasFoods){
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.innerHTML = '<div class="empty-icon">🍽️</div><p>今天还没有记录饮食</p><p class="empty-sub">点击上方「添加食物」开始记录</p>';
+    empty.innerHTML = '<div class="empty-icon">🍽️</div><p>今天还没有记录饮食</p><p class="empty-sub">点击「添加食物」或「榨果汁」开始记录</p>';
     p.appendChild(empty);
     return;
   }
@@ -86,9 +101,7 @@ function renderFoodTab(p){
     const block = document.createElement('div');
     block.className = 'meal-block';
 
-    // 计算该餐热量
     const mealCal = byMeal[meal].reduce((s, it) => s + calcCal(it), 0);
-
     block.innerHTML = `<div class="meal-header"><span class="meal-name">${mealEmoji(meal)} ${meal}</span><span class="meal-cal">${Math.round(mealCal)} kcal</span></div>`;
 
     byMeal[meal].forEach(item => {
@@ -143,9 +156,253 @@ function deleteFoodItem(idx){
   renderCurrentTab();
 }
 
-// =============================================
+// ================================================================
+// 弹窗：添加普通食物（含搜索下拉）
+// ================================================================
+function openAddFoodModal(){
+  const overlay = document.getElementById('modalOverlay');
+  const modal   = document.getElementById('modalBox');
+  overlay.style.display = 'flex';
+  _currentMatchedFood = null;
+
+  modal.innerHTML = `
+    <div class="modal-header"><h3>🍽️ 添加食物</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label>餐次</label>
+        <select id="mealSelect">
+          <option>早餐</option><option selected>午餐</option><option>晚餐</option><option>下午茶</option><option>加餐</option>
+        </select>
+      </div>
+      <div class="field-row" style="position:relative">
+        <label>食物名称</label>
+        <input id="foodNameInput" type="text" placeholder="输入食物名称，自动搜索…" autocomplete="off"/>
+        <div id="searchDropdown" class="search-dropdown" style="display:none"></div>
+      </div>
+      <div id="matchHint" class="match-hint"></div>
+      <div class="field-row">
+        <label>克重 (g)</label>
+        <input id="foodGramInput" type="number" placeholder="如：150" min="1" max="9999"/>
+      </div>
+      <div id="manualNutrBox" style="display:none">
+        <div class="manual-hint">⚠️ 未匹配到食材数据库，请手动输入（可选）：</div>
+        <div class="field-row"><label>热量 (kcal/100g)</label><input id="manualCal" type="number" placeholder="每100g热量"/></div>
+        <div class="field-row"><label>蛋白质 (g/100g)</label><input id="manualProtein" type="number" placeholder="每100g蛋白质"/></div>
+        <div class="field-row"><label>钙 (mg/100g)</label><input id="manualCa" type="number" placeholder="每100g钙"/></div>
+        <div class="field-row"><label>维C (mg/100g)</label><input id="manualVc" type="number" placeholder="每100g维C"/></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-confirm" onclick="confirmAddFood()">确认添加</button>
+    </div>`;
+
+  // 绑定输入事件：实时搜索
+  const input = document.getElementById('foodNameInput');
+  const dropdown = document.getElementById('searchDropdown');
+  input.addEventListener('input', () => {
+    const kw = input.value.trim();
+    if(!kw){ dropdown.style.display = 'none'; _currentMatchedFood = null; updateMatchHint(''); return; }
+    const results = searchFoodDB(kw);
+    if(results.length === 0){
+      dropdown.style.display = 'none';
+      _currentMatchedFood = null;
+      updateMatchHint(kw);
+      return;
+    }
+    dropdown.innerHTML = '';
+    results.forEach(f => {
+      const div = document.createElement('div');
+      div.className = 'search-item';
+      div.innerHTML = `<span>${f.name}</span><span class="search-item-cal">${f.cal} kcal/100g · 蛋白质${f.protein}g</span>`;
+      div.onclick = () => {
+        input.value = f.name;
+        dropdown.style.display = 'none';
+        _currentMatchedFood = f;
+        updateMatchHint(f.name);
+      };
+      dropdown.appendChild(div);
+    });
+    dropdown.style.display = 'block';
+  });
+
+  // 点击其他地方关闭下拉
+  document.addEventListener('click', function closeDD(e){
+    if(!dropdown.contains(e.target) && e.target !== input){
+      dropdown.style.display = 'none';
+    }
+  });
+}
+
+function updateMatchHint(foodName){
+  const hint = document.getElementById('matchHint');
+  const manualBox = document.getElementById('manualNutrBox');
+  if(!foodName){
+    hint.innerHTML = '';
+    manualBox.style.display = 'none';
+    return;
+  }
+  const f = typeof foodName === 'string' ? FOOD_DB.find(x => x.name === foodName) : _currentMatchedFood;
+  if(f){
+    hint.innerHTML = `<span class="matched">✅ 已匹配：<b>${f.name}</b>｜${f.cal} kcal / ${f.protein}g蛋白质 / 钙${f.ca}mg / 维C${f.vc}mg（每100g）</span>`;
+    manualBox.style.display = 'none';
+  } else {
+    hint.innerHTML = `<span class="unmatched">❓ 未找到"${foodName}"，可手动填入营养数据（可选）</span>`;
+    manualBox.style.display = 'block';
+  }
+}
+
+function confirmAddFood(){
+  const name  = document.getElementById('foodNameInput').value.trim();
+  const grams = parseFloat(document.getElementById('foodGramInput').value);
+  const meal  = document.getElementById('mealSelect').value;
+  if(!name){ alert('请输入食物名称'); return; }
+  if(!grams || grams <= 0){ alert('请输入有效的克重'); return; }
+
+  const item = {name, grams, meal, time: new Date().toTimeString().slice(0,5)};
+  if(_currentMatchedFood){
+    item.matchedId = _currentMatchedFood.id;
+  } else {
+    const mc  = parseFloat(document.getElementById('manualCal').value);
+    const mp  = parseFloat(document.getElementById('manualProtein').value);
+    const mca = parseFloat(document.getElementById('manualCa').value);
+    const mvc = parseFloat(document.getElementById('manualVc').value);
+    if(mc && !isNaN(mc))  item.customCal    = Math.round(mc * grams / 100);
+    if(mp && !isNaN(mp))  item.custom_protein = Math.round(mp * grams / 100 * 10) / 10;
+    if(mca && !isNaN(mca)) item.custom_ca   = Math.round(mca * grams / 100);
+    if(mvc && !isNaN(mvc)) item.custom_vc   = Math.round(mvc * grams / 100);
+  }
+
+  const day = appData[currentDate] || {food:[], med:[]};
+  day.food.push(item);
+  saveDayData(currentDate, day);
+  appData = loadData();
+  closeModal();
+  activeTab = 'food';
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.tab === 'food'));
+  renderCurrentTab();
+}
+
+// ================================================================
+// 弹窗：榨果汁（多种水果混合计算）
+// ================================================================
+function openJuiceModal(){
+  const overlay = document.getElementById('modalOverlay');
+  const modal   = document.getElementById('modalBox');
+  overlay.style.display = 'flex';
+
+  // 只列出水果类
+  const fruits = FOOD_DB.filter(f => f.id.startsWith('fr'));
+  let rowsHtml = '';
+  fruits.forEach(f => {
+    rowsHtml += `
+      <div class="juice-row">
+        <label class="juice-label">
+          <input type="checkbox" class="juice-check" value="${f.id}" data-name="${f.name}"/>
+          ${f.name}
+        </label>
+        <input type="number" class="juice-gram" placeholder="克重" min="1" max="2000" style="width:80px"/>
+      </div>`;
+  });
+
+  modal.innerHTML = `
+    <div class="modal-header"><h3>🧃 榨果汁</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body">
+      <div class="field-row">
+        <label>选择水果 + 填写克重</label>
+        <div class="juice-list">${rowsHtml}</div>
+      </div>
+      <div id="juicePreview" class="juice-preview"></div>
+      <div class="field-row">
+        <label>餐次</label>
+        <select id="juiceMealSelect">
+          <option>早餐</option><option selected>午餐</option><option>晚餐</option><option>下午茶</option><option>加餐</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">取消</button>
+      <button class="btn-confirm" onclick="confirmAddJuice()">确认添加</button>
+    </div>`;
+
+  // 实时计算预览
+  modal.querySelectorAll('.juice-check, .juice-gram').forEach(el => {
+    el.addEventListener('input', updateJuicePreview);
+    el.addEventListener('change', updateJuicePreview);
+  });
+}
+
+function updateJuicePreview(){
+  const preview = document.getElementById('juicePreview');
+  const items = getJuiceItems();
+  if(items.length === 0){
+    preview.innerHTML = '<div class="manual-hint">请勾选水果并填入克重</div>';
+    return;
+  }
+  const result = calcCombinedNutrition(items);
+  preview.innerHTML = `
+    <div class="matched">🧃 <b>${result.name}</b>（共${result.grams}g）</div>
+    <div class="nutr-preview-grid">
+      <span>🔥 ${result.cal} kcal</span>
+      <span>💪 ${result.protein}g 蛋白质</span>
+      <span>🦷 ${result.ca}mg 钙</span>
+      <span>🍊 ${result.vc}mg 维C</span>
+      <span>🌾 B1 ${result.b1}mg</span>
+      <span>🥛 B2 ${result.b2}mg</span>
+      <span>🐟 B6 ${result.b6}mg</span>
+    </div>`;
+}
+
+function getJuiceItems(){
+  const items = [];
+  document.querySelectorAll('.juice-row').forEach(row => {
+    const cb = row.querySelector('.juice-check');
+    const gramInput = row.querySelector('.juice-gram');
+    if(cb.checked){
+      const grams = parseFloat(gramInput.value);
+      if(grams > 0){
+        items.push({foodId: cb.value, grams});
+      }
+    }
+  });
+  return items;
+}
+
+function confirmAddJuice(){
+  const items = getJuiceItems();
+  if(items.length === 0){ alert('请至少勾选一种水果并填入克重'); return; }
+  const result = calcCombinedNutrition(items);
+  const meal = document.getElementById('juiceMealSelect').value;
+
+  const item = {
+    name: result.name,
+    grams: result.grams,
+    meal,
+    time: new Date().toTimeString().slice(0,5),
+    matchedId: '__juice__',   // 特殊标记：果汁
+    juiceData: items,           // 保留原始水果明细
+    customCal: result.cal,
+    custom_protein: result.protein,
+    custom_ca: result.ca,
+    custom_b1: result.b1,
+    custom_b2: result.b2,
+    custom_b6: result.b6,
+    custom_vc: result.vc,
+  };
+
+  const day = appData[currentDate] || {food:[], med:[]};
+  day.food.push(item);
+  saveDayData(currentDate, day);
+  appData = loadData();
+  closeModal();
+  activeTab = 'food';
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.tab === 'food'));
+  renderCurrentTab();
+}
+
+// ================================================================
 // 分区2：热量分析
-// =============================================
+// ================================================================
 function renderCaloriesTab(p){
   const day = appData[currentDate] || {food:[], med:[]};
   p.appendChild(makeDateNav());
@@ -207,7 +464,7 @@ function renderCaloriesTab(p){
   }
   p.appendChild(tip);
 
-  // 按餐次热量分布
+  // 餐次热量分布
   if((day.food || []).length > 0){
     const distCard = document.createElement('div');
     distCard.className = 'dist-card';
@@ -242,17 +499,17 @@ function renderCaloriesTab(p){
   p.appendChild(advCard);
 }
 
-// =============================================
+// ================================================================
 // 分区3：营养分析
-// =============================================
+// ================================================================
 function renderNutritionTab(p){
   const day = appData[currentDate] || {food:[], med:[]};
   p.appendChild(makeDateNav());
 
-  // 计算今日各营养素摄入
+  // 计算今日各营养素摄入（果汁使用 custom_* 字段）
   const intake = {cal:0, protein:0, ca:0, b1:0, b2:0, b6:0, vc:0};
   (day.food || []).forEach(item => {
-    intake.cal     += calcNutrient(item, 'cal');
+    intake.cal     += calcCal(item);
     intake.protein += calcNutrient(item, 'protein');
     intake.ca      += calcNutrient(item, 'ca');
     intake.b1      += calcNutrient(item, 'b1');
@@ -292,7 +549,6 @@ function renderNutritionTab(p){
       if(n.tipSupp) tipHtml += `<br>💊 <b>食补不足时：</b>可考虑服用${n.tipSupp}`;
       tipHtml += `</div>`;
     } else {
-      // 超标提示
       if(pct > 200){
         tipHtml = `<div class="nutr-tip nutr-over">⚠️ 今日摄入超过推荐量2倍，注意控制。</div>`;
       }
@@ -329,9 +585,9 @@ function renderNutritionTab(p){
   }
 }
 
-// =============================================
+// ================================================================
 // 分区4：吃药记录
-// =============================================
+// ================================================================
 function renderMedsTab(p){
   const day = appData[currentDate] || {food:[], med:[]};
   p.appendChild(makeDateNav());
@@ -413,9 +669,207 @@ function deleteMedItem(idx){
   renderCurrentTab();
 }
 
-// =============================================
+// ================================================================
+// 分区5：统计总览
+// ================================================================
+function renderStatsTab(p){
+  // 切换周期：7天 / 14天 / 30天
+  const periodBtns = `
+    <div class="stats-period-tabs" id="statsPeriodTabs">
+      <button class="stats-period-btn active" onclick="changeStatsPeriod(7, this)">近7天</button>
+      <button class="stats-period-btn" onclick="changeStatsPeriod(14, this)">近14天</button>
+      <button class="stats-period-btn" onclick="changeStatsPeriod(30, this)">近30天</button>
+    </div>`;
+
+  const periodWrap = document.createElement('div');
+  periodWrap.innerHTML = periodBtns;
+  p.appendChild(periodWrap);
+
+  // 渲染默认7天
+  const statsBody = document.createElement('div');
+  statsBody.id = 'statsBody';
+  p.appendChild(statsBody);
+  renderStatsContent(statsBody, 7);
+
+  // 绑定周期切换
+  window.changeStatsPeriod = function(days, btn){
+    document.querySelectorAll('.stats-period-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const body = document.getElementById('statsBody');
+    body.innerHTML = '';
+    renderStatsContent(body, days);
+  };
+}
+
+function renderStatsContent(p, days){
+  const today = new Date();
+  const dayKeys = [];
+  for(let i = days - 1; i >= 0; i--){
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dayKeys.push(d.toISOString().slice(0,10));
+  }
+
+  // 过滤出有数据的日期
+  const validDays = dayKeys.filter(k => appData[k] && (appData[k].food || []).length > 0);
+
+  // 热量数据
+  const calData = dayKeys.map(k => {
+    const d = appData[k] || {food:[], med:[]};
+    const cal = (d.food || []).reduce((s, it) => s + calcCal(it), 0);
+    return {key: k, cal};
+  });
+
+  // 营养达标数据
+  const nutriData = dayKeys.map(k => {
+    const d = appData[k] || {food:[], med:[]};
+    const ni = {ca:0, b1:0, b2:0, b6:0, vc:0, protein:0};
+    (d.food || []).forEach(item => {
+      ni.ca      += calcNutrient(item, 'ca');
+      ni.b1      += calcNutrient(item, 'b1');
+      ni.b2      += calcNutrient(item, 'b2');
+      ni.b6      += calcNutrient(item, 'b6');
+      ni.vc      += calcNutrient(item, 'vc');
+      ni.protein += calcNutrient(item, 'protein');
+    });
+    return {key:k, ...ni};
+  });
+
+  // 吃药数据
+  const medData = dayKeys.map(k => {
+    const d = appData[k] || {food:[], med:[]};
+    return {key:k, taken: (d.med || []).length > 0};
+  });
+
+  const tdee = USER_PROFILE.tdee;
+  const avgCal = validDays.length > 0
+    ? Math.round(dayKeys.reduce((s, k) => s + (appData[k]?.food || []).reduce((ss, it) => ss + calcCal(it), 0), 0) / validDays.length)
+    : 0;
+
+  const daysWithFood = validDays.length;
+  const totalMedTaken = dayKeys.filter(k => appData[k] && (appData[k].med || []).length > 0).length;
+
+  // ===== 总览卡片 =====
+  const ovGrid = document.createElement('div');
+  ovGrid.className = 'stats-overview-grid';
+  ovGrid.innerHTML = `
+    <div class="stats-ov-card">
+      <div class="stats-ov-icon">📅</div>
+      <div class="stats-ov-val">${daysWithFood}</div>
+      <div class="stats-ov-label">有记录的天数</div>
+    </div>
+    <div class="stats-ov-card">
+      <div class="stats-ov-icon">🔥</div>
+      <div class="stats-ov-val">${avgCal}</div>
+      <div class="stats-ov-label">日均热量 (kcal)</div>
+    </div>
+    <div class="stats-ov-card full-span">
+      <div class="stats-ov-icon">🎯</div>
+      <div class="stats-ov-val">${validDays.length > 0 ? Math.round(validDays.filter(k => {
+        const c = (appData[k]?.food || []).reduce((s, it) => s + calcCal(it), 0);
+        return c >= tdee * 0.8 && c <= tdee * 1.2;
+      }).length / validDays.length * 100) : 0}%</div>
+      <div class="stats-ov-label">热量达标率（80%~120%目标为达标）</div>
+    </div>`;
+  p.appendChild(ovGrid);
+
+  // ===== 每日热量柱状图 =====
+  const calCard = document.createElement('div');
+  calCard.className = 'dist-card';
+  const maxCal = Math.max(...calData.map(d => d.cal), 1);
+  calCard.innerHTML = `<div class="dist-title">🔥 每日热量（目标 ${tdee} kcal）</div>`;
+  dayKeys.forEach(d => {
+    const pct = Math.min(100, Math.round(d.cal / maxCal * 100));
+    const shortKey = d.slice(5); // MM-DD
+    const calClass = d.cal > tdee * 1.2 ? 'over' : d.cal >= tdee * 0.8 ? 'good' : 'low';
+    const barItem = document.createElement('div');
+    barItem.className = 'stats-day-bar';
+    barItem.innerHTML = `
+      <span class="stats-day-label">${shortKey}</span>
+      <div class="stats-day-bar-wrap">
+        <div class="stats-day-bar-fill ${calClass}" style="width:${pct}%"></div>
+      </div>
+      <span class="stats-day-bar-val">${Math.round(d.cal)} kcal</span>`;
+    calCard.appendChild(barItem);
+  });
+  p.appendChild(calCard);
+
+  // ===== 营养素达标率 =====
+  const nutriCard = document.createElement('div');
+  nutriCard.className = 'dist-card';
+  nutriCard.innerHTML = `<div class="dist-title">🌿 营养素达标率（每日推荐量）</div>`;
+
+  const nutriLabels = [
+    {key:'protein', label:'蛋白质', icon:'💪', dri:DRI.protein, unit:'g'},
+    {key:'ca',      label:'钙',      icon:'🦷', dri:DRI.ca,      unit:'mg'},
+    {key:'b1',      label:'维生素B1', icon:'🌾', dri:DRI.b1,      unit:'mg'},
+    {key:'b2',      label:'维生素B2', icon:'🥛', dri:DRI.b2,      unit:'mg'},
+    {key:'b6',      label:'维生素B6', icon:'🐟', dri:DRI.b6,      unit:'mg'},
+    {key:'vc',      label:'维生素C',  icon:'🍊', dri:DRI.vc,      unit:'mg'},
+  ];
+
+  nutriLabels.forEach(n => {
+    const hitDays = validDays.filter(k => {
+      const ni = nutriData.find(nd => nd.key === k);
+      return ni && ni[n.key] >= n.dri;
+    }).length;
+    const hitRate = validDays.length > 0 ? Math.round(hitDays / validDays.length * 100) : 0;
+    const hitColor = hitRate >= 80 ? '#22c55e' : hitRate >= 50 ? '#f59e0b' : '#ef4444';
+    const row = document.createElement('div');
+    row.className = 'stats-nutri-row';
+    row.innerHTML = `
+      <span class="stats-nutri-icon">${n.icon}</span>
+      <span class="stats-nutri-name">${n.label}</span>
+      <div class="stats-nutri-bar-wrap">
+        <div class="stats-nutri-bar" style="width:${hitRate}%;background:${hitColor}"></div>
+      </div>
+      <span class="stats-nutri-pct">${hitRate}%</span>`;
+    nutriCard.appendChild(row);
+  });
+  p.appendChild(nutriCard);
+
+  // ===== 吃药记录日历 =====
+  const medCard = document.createElement('div');
+  medCard.className = 'dist-card';
+  medCard.innerHTML = `<div class="dist-title">💊 吃药记录（${days}天内）</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:8px">
+      ${['一','二','三','四','五','六','日'].map(d => `<div class="stats-cal-day header">${d}</div>`).join('')}
+    </div>
+    <div class="stats-calendar" id="statsCalendar"></div>
+    <div style="display:flex;gap:12px;margin-top:8px;font-size:12px;color:var(--text2)">
+      <span style="display:flex;align-items:center;gap:4px">
+        <span style="width:12px;height:12px;border-radius:3px;background:#dcfce7;display:inline-block"></span> 已服药
+      </span>
+      <span style="display:flex;align-items:center;gap:4px">
+        <span style="width:12px;height:12px;border-radius:3px;background:#fee2e2;display:inline-block"></span> 未记录
+      </span>
+    </div>`;
+  p.appendChild(medCard);
+
+  // 渲染日历
+  const calEl = medCard.querySelector('.stats-calendar');
+  // 周一开始
+  const firstDay = new Date(dayKeys[0]);
+  const startDow = (firstDay.getDay() + 6) % 7; // 周一=0
+  // 填充空白
+  for(let i = 0; i < startDow; i++){
+    const empty = document.createElement('div');
+    empty.className = 'stats-cal-day';
+    empty.style.background = 'transparent';
+    calEl.appendChild(empty);
+  }
+  dayKeys.forEach(k => {
+    const md = medData.find(m => m.key === k);
+    const el = document.createElement('div');
+    el.className = 'stats-cal-day ' + (md?.taken ? 'taken' : 'missed');
+    el.innerText = parseInt(k.slice(8));
+    calEl.appendChild(el);
+  });
+}
+
+// ================================================================
 // 日期导航
-// =============================================
+// ================================================================
 function makeDateNav(){
   const nav = document.createElement('div');
   nav.className = 'date-nav';
@@ -447,110 +901,9 @@ function shiftDate(delta){
   renderCurrentTab();
 }
 
-// =============================================
-// 弹窗：添加食物
-// =============================================
-function openAddFoodModal(){
-  const overlay = document.getElementById('modalOverlay');
-  const modal   = document.getElementById('modalBox');
-  overlay.style.display = 'flex';
-
-  modal.innerHTML = `
-    <div class="modal-header"><h3>🍽️ 添加食物</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
-    <div class="modal-body">
-      <div class="field-row">
-        <label>餐次</label>
-        <select id="mealSelect">
-          <option>早餐</option><option selected>午餐</option><option>晚餐</option><option>下午茶</option><option>加餐</option>
-        </select>
-      </div>
-      <div class="field-row">
-        <label>食物名称</label>
-        <input id="foodNameInput" type="text" placeholder="如：白米饭、西兰花、鸡胸肉…" oninput="onFoodNameInput(this.value)"/>
-      </div>
-      <div id="matchHint" class="match-hint"></div>
-      <div class="field-row">
-        <label>克重 (g)</label>
-        <input id="foodGramInput" type="number" placeholder="如：150" min="1" max="9999"/>
-      </div>
-      <div id="manualNutrBox" style="display:none">
-        <div class="manual-hint">⚠️ 未匹配到食材数据库，请手动输入（可选）：</div>
-        <div class="field-row">
-          <label>热量 (kcal)</label>
-          <input id="manualCal" type="number" placeholder="每100g热量"/>
-        </div>
-        <div class="field-row">
-          <label>蛋白质 (g)</label>
-          <input id="manualProtein" type="number" placeholder="每100g蛋白质"/>
-        </div>
-        <div class="field-row">
-          <label>钙 (mg)</label>
-          <input id="manualCa" type="number" placeholder="每100g钙"/>
-        </div>
-        <div class="field-row">
-          <label>维生素C (mg)</label>
-          <input id="manualVc" type="number" placeholder="每100g维C"/>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeModal()">取消</button>
-      <button class="btn-confirm" onclick="confirmAddFood()">确认添加</button>
-    </div>`;
-}
-
-let _currentMatchedFood = null;
-
-function onFoodNameInput(val){
-  const hint = document.getElementById('matchHint');
-  const manualBox = document.getElementById('manualNutrBox');
-  if(!val.trim()){ hint.innerHTML = ''; manualBox.style.display='none'; _currentMatchedFood=null; return; }
-  const matched = lookupFood(val);
-  _currentMatchedFood = matched;
-  if(matched){
-    hint.innerHTML = `<span class="matched">✅ 已匹配：<b>${matched.name}</b>（每100g：${matched.cal}kcal，蛋白质${matched.protein}g，钙${matched.ca}mg，维C${matched.vc}mg）</span>`;
-    manualBox.style.display = 'none';
-  } else {
-    hint.innerHTML = `<span class="unmatched">❓ 未找到"${val}"，可手动输入营养数据（或留空跳过）</span>`;
-    manualBox.style.display = 'block';
-  }
-}
-
-function confirmAddFood(){
-  const name  = document.getElementById('foodNameInput').value.trim();
-  const grams = parseFloat(document.getElementById('foodGramInput').value);
-  const meal  = document.getElementById('mealSelect').value;
-  if(!name){ alert('请输入食物名称'); return; }
-  if(!grams || grams <= 0){ alert('请输入有效的克重'); return; }
-
-  const item = {name, grams, meal, time: new Date().toTimeString().slice(0,5)};
-  if(_currentMatchedFood){
-    item.matchedId = _currentMatchedFood.id;
-  } else {
-    const mc = parseFloat(document.getElementById('manualCal').value);
-    const mp = parseFloat(document.getElementById('manualProtein').value);
-    const mca = parseFloat(document.getElementById('manualCa').value);
-    const mvc = parseFloat(document.getElementById('manualVc').value);
-    if(mc && !isNaN(mc)) item.customCal     = Math.round(mc * grams / 100);
-    if(mp && !isNaN(mp)) item.custom_protein = Math.round(mp * grams / 100 * 10) / 10;
-    if(mca && !isNaN(mca)) item.custom_ca   = Math.round(mca * grams / 100);
-    if(mvc && !isNaN(mvc)) item.custom_vc   = Math.round(mvc * grams / 100);
-  }
-
-  const day = appData[currentDate] || {food:[], med:[]};
-  day.food.push(item);
-  saveDayData(currentDate, day);
-  appData = loadData();
-  closeModal();
-  // 添加完自动回到饮食分区
-  activeTab = 'food';
-  document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.tab === 'food'));
-  renderCurrentTab();
-}
-
-// =============================================
+// ================================================================
 // 弹窗：添加药品
-// =============================================
+// ================================================================
 function openAddMedModal(med){
   const overlay = document.getElementById('modalOverlay');
   const modal   = document.getElementById('modalBox');
@@ -614,9 +967,9 @@ function closeModal(){
   _currentMatchedFood = null;
 }
 
-// =============================================
+// ================================================================
 // PWA 安装提示
-// =============================================
+// ================================================================
 let _deferredPrompt = null;
 function setupInstall(){
   window.addEventListener('beforeinstallprompt', e => {

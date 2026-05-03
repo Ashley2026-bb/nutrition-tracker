@@ -290,6 +290,39 @@
 
     .med-modal-info{font-size:13px;color:var(--text2);background:var(--green-bg);padding:8px 12px;border-radius:var(--radius-sm);margin-bottom:12px;}
 
+    /* 食物搜索下拉 */
+    .search-dropdown{
+      position:absolute;top:100%;left:0;right:0;z-index:100;
+      background:#fff;border:1.5px solid #e5e7eb;border-top:none;
+      border-radius:0 0 var(--radius-sm) var(--radius-sm);
+      max-height:200px;overflow-y:auto;
+      box-shadow:0 4px 12px rgba(0,0,0,.1);
+    }
+    .search-item{
+      padding:10px 12px;border-bottom:1px solid #f5f5f0;cursor:pointer;
+      display:flex;justify-content:space-between;align-items:center;
+    }
+    .search-item:last-child{border-bottom:none;}
+    .search-item:hover{background:var(--green-bg);}
+    .search-item span:first-child{font-size:14px;color:var(--text);}
+    .search-item-cal{font-size:11px;color:var(--text2);}
+
+    /* 果汁弹窗 */
+    .juice-list{display:flex;flex-direction:column;gap:6px;max-height:250px;overflow-y:auto;}
+    .juice-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f5f5f0;}
+    .juice-row:last-child{border-bottom:none;}
+    .juice-label{font-size:14px;color:var(--text);flex:1;display:flex;align-items:center;gap:6px;cursor:pointer;}
+    .juice-check{width:16px;height:16px;accent-color:var(--green);}
+    .juice-gram{padding:6px 8px;border:1.5px solid #e5e7eb;border-radius:var(--radius-sm);font-size:14px;outline:none;}
+    .juice-gram:focus{border-color:var(--green);}
+    .juice-preview{
+      background:var(--green-bg);border-radius:var(--radius-sm);
+      padding:10px 12px;margin-bottom:12px;font-size:13px;
+    }
+    .juice-preview .matched{font-weight:600;color:#166534;margin-bottom:6px;display:block;}
+    .nutr-preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:4px;}
+    .nutr-preview-grid span{font-size:12px;color:var(--text2);}
+
     /* ============================================================
        安装横幅
     ============================================================ */
@@ -303,6 +336,70 @@
     .install-banner button{padding:6px 12px;border-radius:20px;border:none;font-size:13px;cursor:pointer;}
     #installBtn{background:#fff;color:var(--green);font-weight:700;}
     .dismiss-btn{background:rgba(255,255,255,.2);color:#fff;}
+
+    /* ============================================================
+       统计模块
+    ============================================================ */
+    .stats-period-tabs{
+      display:flex;gap:6px;margin-bottom:12px;
+    }
+    .stats-period-btn{
+      flex:1;padding:7px 4px;border-radius:20px;border:1.5px solid #e5e7eb;
+      background:#fff;color:var(--text2);font-size:12px;font-weight:500;
+      cursor:pointer;transition:all .2s;text-align:center;
+    }
+    .stats-period-btn.active{
+      background:var(--green);color:#fff;border-color:var(--green);
+    }
+    .stats-overview-grid{
+      display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;
+    }
+    .stats-ov-card{
+      background:var(--card);border-radius:var(--radius);
+      box-shadow:var(--shadow);padding:14px;text-align:center;
+    }
+    .stats-ov-icon{font-size:28px;margin-bottom:6px;}
+    .stats-ov-val{font-size:22px;font-weight:800;color:var(--text);margin-bottom:2px;}
+    .stats-ov-label{font-size:12px;color:var(--text2);}
+    .stats-ov-card.full-span{grid-column:1/-1;}
+
+    /* 每日热量条 */
+    .stats-day-bar{
+      display:flex;align-items:center;gap:8px;margin-bottom:8px;
+    }
+    .stats-day-label{font-size:12px;color:var(--text2);width:42px;flex-shrink:0;}
+    .stats-day-bar-wrap{flex:1;height:14px;background:#e5e7eb;border-radius:7px;overflow:hidden;}
+    .stats-day-bar-fill{
+      height:100%;border-radius:7px;transition:width .4s;
+      min-width:2px;
+    }
+    .stats-day-bar-fill.over{background:#ef4444;}
+    .stats-day-bar-fill.good{background:#22c55e;}
+    .stats-day-bar-fill.low{background:#f59e0b;}
+    .stats-day-bar-val{font-size:11px;color:var(--text2);width:44px;text-align:right;flex-shrink:0;}
+
+    /* 营养达标进度 */
+    .stats-nutri-row{
+      display:flex;align-items:center;gap:8px;margin-bottom:10px;
+    }
+    .stats-nutri-icon{font-size:16px;width:24px;text-align:center;flex-shrink:0;}
+    .stats-nutri-name{font-size:13px;width:60px;flex-shrink:0;}
+    .stats-nutri-bar-wrap{flex:1;height:10px;background:#e5e7eb;border-radius:5px;overflow:hidden;}
+    .stats-nutri-bar{height:100%;border-radius:5px;transition:width .5s;}
+    .stats-nutri-pct{font-size:12px;color:var(--text2);width:50px;text-align:right;flex-shrink:0;}
+
+    /* 吃药日历 */
+    .stats-calendar{
+      display:grid;grid-template-columns:repeat(7,1fr);gap:4px;
+    }
+    .stats-cal-day{
+      aspect-ratio:1;border-radius:4px;display:flex;align-items:center;
+      justify-content:center;font-size:11px;font-weight:600;
+    }
+    .stats-cal-day.taken{background:#dcfce7;color:#166534;}
+    .stats-cal-day.missed{background:#fee2e2;color:#991b1b;}
+    .stats-cal-day.no-record{background:#f3f4f6;color:#a8a29e;}
+    .stats-cal-day.header{background:transparent;color:var(--text2);font-weight:500;}
   </style>
 </head>
 <body>
@@ -332,6 +429,9 @@
     </button>
     <button class="tab-btn" data-tab="meds">
       <span class="tab-icon">💊</span>吃药记录
+    </button>
+    <button class="tab-btn" data-tab="stats">
+      <span class="tab-icon">📊</span>统计
     </button>
   </nav>
 

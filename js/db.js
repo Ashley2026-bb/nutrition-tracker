@@ -115,6 +115,52 @@ const FOOD_DB = [
   {id:'c07',name:'咸鸭蛋',    cal:190, protein:13,  ca:118, b1:0.15, b2:0.30, b6:0.12, vc:0}
 ];
 
+// ============================================================
+// 果汁组合计算
+// ============================================================
+/**
+ * 计算多种食材混合的营养（如果汁）
+ * @param {Array<{foodId:string, grams:number}>} items
+ * @returns {{name:string, cal:number, protein:number, ca:number, b1:number, b2:number, b6:number, vc:number, grams:number}}
+ */
+function calcCombinedNutrition(items){
+  const result = { cal:0, protein:0, ca:0, b1:0, b2:0, b6:0, vc:0, grams:0, names:[] };
+  items.forEach(it => {
+    const f = FOOD_DB.find(x => x.id === it.foodId);
+    if(!f) return;
+    const ratio = it.grams / 100;
+    result.cal     += (f.cal     || 0) * ratio;
+    result.protein += (f.protein || 0) * ratio;
+    result.ca      += (f.ca      || 0) * ratio;
+    result.b1      += (f.b1      || 0) * ratio;
+    result.b2      += (f.b2      || 0) * ratio;
+    result.b6      += (f.b6      || 0) * ratio;
+    result.vc      += (f.vc      || 0) * ratio;
+    result.grams   += it.grams;
+    result.names.push(f.name);
+  });
+  result.name = result.names.join('+') + '汁';
+  // 四舍五入
+  result.cal     = Math.round(result.cal);
+  result.protein = Math.round(result.protein * 10) / 10;
+  result.ca      = Math.round(result.ca);
+  result.b1      = Math.round(result.b1 * 100) / 100;
+  result.b2      = Math.round(result.b2 * 100) / 100;
+  result.b6      = Math.round(result.b6 * 100) / 100;
+  result.vc      = Math.round(result.vc);
+  return result;
+}
+
+/**
+ * 搜索食材（名称模糊匹配，返回前10条）
+ */
+function searchFoodDB(keyword){
+  if(!keyword || !keyword.trim()) return [];
+  const k = keyword.trim().toLowerCase();
+  const hits = FOOD_DB.filter(f => f.name.toLowerCase().includes(k));
+  return hits.slice(0, 10);
+}
+
 // 固定药品列表
 const MED_DB = [
   {id:'med01', name:'优甲乐', unit:'片', note:'左甲状腺素钠，建议早晨空腹'},
